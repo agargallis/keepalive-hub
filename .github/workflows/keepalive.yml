@@ -1,0 +1,73 @@
+name: Supabase Keep-Alive (all projects)
+
+# Pings every Supabase project's REST API on a schedule so none of them is ever
+# paused for inactivity. The `keepalive` job auto-commits a heartbeat when the
+# workflow is close to GitHub's 60-day auto-disable, so this keeps running
+# forever with zero manual action.
+#
+# Anon keys below are the public (anon) keys — safe to commit; real protection
+# is Row Level Security on each project.
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *" # every 2 days at 06:00 UTC (Supabase pauses after ~7 days idle)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    name: Ping ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: booking-barbershop
+            url: https://yvjdverrczzdhmjhmpur.supabase.co
+            table: services
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2amR2ZXJyY3p6ZGhtamhtcHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MzQxMTUsImV4cCI6MjA4MTExMDExNX0.ZYthieuf5qMBIFO9AAQGzYgrmlMhyiTVi-vEwsY2UBY
+          - name: booking-other
+            url: https://idtoguhekgqrskkudtmh.supabase.co
+            table: services
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkdG9ndWhla2dxcnNra3VkdG1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5ODQxMzMsImV4cCI6MjA5NTU2MDEzM30.9vDJLJbxrCs0OXn-A-a8gcnKZb-toJPSgM5O9hPaYus
+          - name: metaxumas
+            url: https://camyiysslknvjlmadndg.supabase.co
+            table: site_settings
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbXlpeXNzbGtudmpsbWFkbmRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNTE1NTAsImV4cCI6MjA5MzYyNzU1MH0.nyxRMU9-8xDxJZJQNEwxVfrQaWv8JrBV__zrr3q4ib4
+          - name: spacers
+            url: https://vvevacpgaacqazvizftt.supabase.co
+            table: content
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ2ZXZhY3BnYWFjcWF6dml6ZnR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NjEzMTksImV4cCI6MjA5OTMzNzMxOX0.ErcC2A4Hdp4kgE2u4-B5DvAx6T90R9lax0fQGjx0j_M
+          - name: noobs
+            url: https://jfcgopgdivqpymlujefk.supabase.co
+            table: site_content
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY2dvcGdkaXZxcHltbHVqZWZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NTczMzUsImV4cCI6MjA5MTEzMzMzNX0.LQrHoGL6GTRW3XQO6ixz00ldoy4iJFhDqQfvKk8s_DA
+          - name: eprepe
+            url: https://puinyzgxrqqokeybtszf.supabase.co
+            table: reviews
+            key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1aW55emd4cnFxb2tleWJ0c3pmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDExNTEsImV4cCI6MjA5Nzg3NzE1MX0.e3EyyazJJIekH4pM8WQWwmSYSQym2sLAByJJgIYBsdA
+    steps:
+      - name: Ping ${{ matrix.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="${{ matrix.url }}/rest/v1/${{ matrix.table }}?select=*&limit=1"
+          curl --fail-with-body --silent --show-error --location \
+            --max-time 30 --retry 3 --retry-delay 5 \
+            --header "apikey: ${{ matrix.key }}" \
+            --header "Authorization: Bearer ${{ matrix.key }}" \
+            --header "Accept: application/json" \
+            "$endpoint" >/dev/null
+          echo "OK — ${{ matrix.name }} kept alive."
+
+  keepalive:
+    name: Prevent 60-day auto-disable
+    needs: ping
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep the workflow itself alive
+        uses: gautamkrishnar/keepalive-workflow@v2
