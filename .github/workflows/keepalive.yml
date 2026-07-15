@@ -67,7 +67,30 @@ jobs:
     name: Prevent 60-day auto-disable
     needs: ping
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Keep the workflow itself alive
-        uses: gautamkrishnar/keepalive-workflow@v2
+      - name: Heartbeat commit (only when the repo is going idle)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          age_days=$(( (now - last) / 86400 ))
+          echo "Days since last commit: ${age_days}"
+
+          # GitHub disables scheduled workflows after 60 idle days. Commit a heartbeat
+          # once we cross 40 days so the timer resets well before that — minimal noise.
+          if [ "${age_days}" -ge 40 ]; then
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > heartbeat.txt
+            git add heartbeat.txt
+            git commit -m "chore: keep-alive heartbeat"
+            git push
+            echo "Heartbeat committed — 60-day timer reset."
+          else
+            echo "No heartbeat needed yet."
+          fi
