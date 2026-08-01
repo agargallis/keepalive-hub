@@ -95,6 +95,11 @@ jobs:
   keepalive:
     name: Prevent 60-day auto-disable
     needs: ping
+    # Run even if a ping failed: this job's sole purpose is to reset GitHub's
+    # 60-day scheduled-workflow timer, which must happen regardless of whether
+    # any single project was reachable — otherwise one flaky project could let
+    # the whole schedule get disabled and then everything pauses.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
