@@ -52,16 +52,45 @@ jobs:
     steps:
       - name: Ping ${{ matrix.name }}
         shell: bash
+        env:
+          NAME: ${{ matrix.name }}
+          URL: ${{ matrix.url }}
+          TABLE: ${{ matrix.table }}
+          KEY: ${{ matrix.key }}
         run: |
-          set -euo pipefail
-          endpoint="${{ matrix.url }}/rest/v1/${{ matrix.table }}?select=*&limit=1"
-          curl --fail-with-body --silent --show-error --location \
+          set -uo pipefail
+          endpoint="$URL/rest/v1/$TABLE?select=*&limit=1"
+          # -o /dev/null + %{http_code}: we care about the status, not the body.
+          # `|| echo 000` turns a hard connection failure (paused/DNS) into 000.
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 30 --retry 3 --retry-delay 5 \
-            --header "apikey: ${{ matrix.key }}" \
-            --header "Authorization: Bearer ${{ matrix.key }}" \
+            --header "apikey: $KEY" \
+            --header "Authorization: Bearer $KEY" \
             --header "Accept: application/json" \
-            "$endpoint" >/dev/null
-          echo "OK — ${{ matrix.name }} kept alive."
+            "$endpoint" || echo "000")
+          echo "$NAME → HTTP $code"
+
+          case "$code" in
+            2*)
+              echo "✅ $NAME kept alive (real DB read, HTTP $code)."
+              ;;
+            401|403)
+              echo "::error::$NAME: anon key rejected (HTTP $code). Update the key for $NAME in the matrix."
+              exit 1
+              ;;
+            404)
+              echo "::error::$NAME: table '$TABLE' not found (HTTP $code). Point $NAME at an anon-readable table in the matrix."
+              exit 1
+              ;;
+            000|5*)
+              echo "::error::$NAME is unreachable (HTTP $code) — the project is almost certainly PAUSED. Restore it in the Supabase dashboard (app.supabase.com), then re-run this workflow."
+              exit 1
+              ;;
+            *)
+              echo "::error::$NAME: unexpected response HTTP $code."
+              exit 1
+              ;;
+          esac
 
   keepalive:
     name: Prevent 60-day auto-disable
