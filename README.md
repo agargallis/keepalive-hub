@@ -12,3 +12,14 @@ eprepe.
 
 To add a project: append an entry to the `matrix.include` list in
 `.github/workflows/keepalive.yml` (url + a table name + the public anon key).
+
+## Also here: noobs.gr content sync
+
+`.github/workflows/noobs-basketaki-sync.yml` pings
+`https://noobs.gr/api/sync-basketaki` every 15 minutes. That endpoint rebuilds
+the site's standings, schedule and results from the club's official
+basketaki.com pages and looks up the YouTube stream of each played game. The
+site also re-syncs on every visit; this heartbeat is what makes a match-day
+update land even when nobody opens the site. The endpoint is public, throttles
+itself to one scrape per 10 minutes and writes nothing when nothing changed, so
+no secret is needed here.

@@ -1,0 +1,63 @@
+name: Noobs site — basketaki sync
+
+# noobs.gr rebuilds its standings, schedule and results from the club's official
+# basketaki.com pages, and fills in the YouTube stream of each played game.
+#
+# The site already re-syncs whenever someone opens it, but on a match day the
+# result, the next fixture and the stream should show up even if nobody happens
+# to visit. This heartbeat covers that: the endpoint is public, throttles itself
+# to one scrape per 10 minutes, and writes nothing when basketaki has not
+# changed — so pinging it often is cheap and safe.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # every 15 minutes (public repo: Actions minutes are free)
+  workflow_dispatch:
+
+# A slow run must never stack up on the next one.
+concurrency:
+  group: noobs-basketaki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Ping /api/sync-basketaki
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger the sync
+        shell: bash
+        env:
+          ENDPOINT: https://noobs.gr/api/sync-basketaki
+        run: |
+          set -uo pipefail
+
+          body=$(mktemp)
+          code=$(curl -s -o "$body" -w "%{http_code}" \
+            --max-time 60 --retry 2 --retry-delay 10 \
+            --header "Accept: application/json" \
+            "$ENDPOINT" || echo "000")
+
+          echo "HTTP $code"
+          cat "$body"
+          echo
+
+          case "$code" in
+            2*)
+              # `skipped` means the throttle window has not elapsed - also a success.
+              if grep -q '"ok":true' "$body"; then
+                echo "✅ Sync endpoint healthy."
+              else
+                echo "::error::Sync endpoint answered HTTP $code but not ok:true."
+                exit 1
+              fi
+              ;;
+            000|5*)
+              echo "::error::noobs.gr/api/sync-basketaki unreachable or failing (HTTP $code)."
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected response from the sync endpoint (HTTP $code)."
+              exit 1
+              ;;
+          esac
