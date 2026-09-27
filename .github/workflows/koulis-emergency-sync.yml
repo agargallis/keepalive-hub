@@ -1,0 +1,46 @@
+name: Koulis emergency copy (every 30 minutes)
+
+# Copies the barbershop's appointments into the independent emergency app
+# (barbershop-emergency on Vercel) every 30 minutes. Vercel Hobby crons only run
+# once a day, so this schedule lives here, where Actions minutes are free.
+#
+# If the main system is down the sync fails and GitHub emails you: an early alarm.
+#
+# Setup (Settings > Secrets and variables > Actions):
+#   Variable  EMERGENCY_SYNC_URL      https://<emergency-app>.vercel.app/api/sync
+#   Secret    EMERGENCY_CRON_SECRET   same value as CRON_SECRET on Vercel
+# Until both exist, the run is skipped (no failure emails).
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Sync the emergency copy
+        env:
+          URL: ${{ vars.EMERGENCY_SYNC_URL }}
+          SECRET: ${{ secrets.EMERGENCY_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "Not configured yet (EMERGENCY_SYNC_URL / EMERGENCY_CRON_SECRET). Skipping."
+            exit 0
+          fi
+          code=$(curl -s -o response.json -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 10 \
+            -H "Authorization: Bearer $SECRET" "$URL" || echo "000")
+          echo "HTTP $code"
+          cat response.json 2>/dev/null; echo
+          case "$code" in
+            200) echo "Emergency copy is up to date." ;;
+            401) echo "::error::Wrong EMERGENCY_CRON_SECRET (must equal CRON_SECRET on Vercel)."; exit 1 ;;
+            500) echo "::error::The MAIN booking system did not answer. The last emergency copy is kept and can be printed."; exit 1 ;;
+            *)   echo "::error::Emergency app unreachable (HTTP $code)."; exit 1 ;;
+          esac
